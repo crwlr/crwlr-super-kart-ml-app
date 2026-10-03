@@ -36,11 +36,11 @@ if st.button("Predict Sales (Online)"):
         "Store_Age_Years": store_age_years,
         "Product_Type": product_type_category # Use Product_Type as it's the engineered feature
     }
-    
+
     # Convert categorical variables to one-hot encoding manually for Flask API compatibility
     # Note: This is simplified. In a real scenario, the API itself should handle encoding based on its trained features.
     # For demonstration, we'll assume the API expects the raw categorical values and handles encoding internally.
-    
+
     try:
         response = requests.post(FLASK_API_URL, json=payload)
         if response.status_code == 200:
