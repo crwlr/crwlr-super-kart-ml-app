@@ -1,54 +1,84 @@
+# Import necessary libraries
+import numpy as np
+import joblib  # For loading the serialized model
+import pandas as pd  # For data manipulation
+from flask import Flask, request, jsonify  # For creating the Flask API
 
-from flask import Flask, request, jsonify
-import joblib
-import pandas as pd
+# Initialize the Flask application
+superkart_api = Flask("SuperKart Sales Predictor")
 
-app = Flask(__name__)
+# Load the trained machine learning model pipeline using the correct filename
+model = joblib.load("backend/superkart_xgb_model.joblib")
 
-# Corrected path to load from the backend folder
-model = joblib.load('backend/superkart_xgb_model.joblib')
+# Define a route for the home page (GET request)
+@superkart_api.get('/')
+def home():
+    """
+    This function handles GET requests to the root URL ('/') of the API.
+    It returns a simple welcome message.
+    """
+    return "Welcome to the SuperKart Sales Prediction API!"
 
-@app.route('/v1/predict', methods=['POST'])
-def predict():
+# Define an endpoint for single product-store prediction (POST request)
+@superkart_api.post('/v1/predict')
+def predict_sales():
     try:
-        data = request.get_json(force=True)
-        df = pd.DataFrame([data])
-
-        # APPLY FEATURE ENGINEERING TO MATCH TRAINING
-        if "Product_Id" in df.columns:
-            df['Food_Subcat'] = df['Product_Id'].str[:2]
-            df = df.drop(columns=['Product_Id'])
-
-        if "Store_Establishment_Year" in df.columns:
-            df['Store_Age_Years'] = 2023 - df['Store_Establishment_Year']
-            df = df.drop(columns=['Store_Establishment_Year'])
-
-        prediction = model.predict(df)
-        return jsonify({'prediction': float(prediction[0])})
+        # Get JSON data from the client request
+        data = request.get_json()
+        
+        # Convert to DataFrame
+        input_df = pd.DataFrame([data])
+        
+        # Map Product_Id_char directly to Food_Subcat if present
+        if 'Product_Id_char' in input_df.columns:
+            input_df['Food_Subcat'] = input_df['Product_Id_char']
+        elif 'Product_Id' in input_df.columns:
+            input_df['Food_Subcat'] = input_df['Product_Id'].astype(str).str[:2]
+            
+        # Make prediction
+        prediction = model.predict(input_df)[0]
+        
+        return jsonify({
+            "status": "success",
+            "predicted_sales": float(prediction)
+        })
     except Exception as e:
-        return jsonify({'error': str(e)}), 400
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 400
 
-@app.route('/v1/predictbatch', methods=['POST'])
-def predict_batch():
+# Define an endpoint for batch predictions
+@superkart_api.post('/v1/batchpredict')
+def predict_batch_sales():
+    """This function handles batch predictions for multiple records."""
     try:
-        # 1. Read the uploaded file from the request
-        file = request.files['file']
-        df = pd.read_csv(file)
+        json_data = request.get_json()
+        input_df = pd.DataFrame(json_data)
 
-        # 2. Apply the exact same feature engineering as training
-        if 'Product_Id' in df.columns:
-            df['Food_Subcat'] = df['Product_Id'].str[:2]
-            df.drop(columns=['Product_Id'], inplace=True)
+        # 1. Map Product_Id_char directly to Food_Subcat if present
+        if 'Product_Id_char' in input_df.columns:
+            input_df['Food_Subcat'] = input_df['Product_Id_char']
+        # 2. Fallback: Derive Food_Subcat from Product_Id if Product_Id_char is missing
+        elif 'Product_Id' in input_df.columns:
+            input_df['Food_Subcat'] = input_df['Product_Id'].astype(str).str[:2]
 
-        if 'Store_Establishment_Year' in df.columns:
-            df['Store_Age_Years'] = 2023 - df['Store_Establishment_Year']
-            df.drop(columns=['Store_Establishment_Year'], inplace=True)
+        # 3. Drop raw identifier columns so the shape matches your trained model
+        columns_to_drop = [col for col in ['Product_Id', 'Product_Id_char'] if col in input_df.columns]
+        input_df = input_df.drop(columns=columns_to_drop)
 
-        # 3. Make predictions using your saved model or pipeline
-        predictions = model.predict(df)
+        predictions = model.predict(input_df)
 
-        # 4. Return results as JSON
-        return jsonify({str(i): float(pred) for i, pred in enumerate(predictions)})
+        return jsonify({
+            "status": "success",
+            "predictions": predictions.tolist()
+        })
 
     except Exception as e:
-        return jsonify({'error': str(e)}), 400
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 400
+
+if __name__ == '__main__':
+    superkart_api.run(host='0.0.0.0', port=5000, debug=False)
