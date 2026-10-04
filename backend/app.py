@@ -1,84 +1,60 @@
-# Import necessary libraries
 import numpy as np
-import joblib  # For loading the serialized model
-import pandas as pd  # For data manipulation
-from flask import Flask, request, jsonify  # For creating the Flask API
+import joblib
+import pandas as pd
+from flask import Flask, request, jsonify
 
-# Initialize the Flask application
 superkart_api = Flask("SuperKart Sales Predictor")
-
-# Load the trained machine learning model pipeline using the correct filename
 model = joblib.load("backend/superkart_xgb_model.joblib")
 
-# Define a route for the home page (GET request)
-@superkart_api.get('/')
+REQUIRED_FEATURES = [
+    "Product_Weight", "Product_Sugar_Content", "Product_Allocated_Area",
+    "Product_MRP", "Store_Size", "Store_Location_City_Type", "Store_Type",
+    "Product_Id_char", "Store_Age_Years", "Product_Type_Category"
+]
+
+@superkart_api.get("/")
 def home():
-    """
-    This function handles GET requests to the root URL ('/') of the API.
-    It returns a simple welcome message.
-    """
     return "Welcome to the SuperKart Sales Prediction API!"
 
-# Define an endpoint for single product-store prediction (POST request)
-@superkart_api.post('/v1/predict')
+@superkart_api.post("/v1/predict")
 def predict_sales():
     try:
-        # Get JSON data from the client request
-        data = request.get_json()
-        
-        # Convert to DataFrame
-        input_df = pd.DataFrame([data])
-        
-        # Map Product_Id_char directly to Food_Subcat if present
-        if 'Product_Id_char' in input_df.columns:
-            input_df['Food_Subcat'] = input_df['Product_Id_char']
-        elif 'Product_Id' in input_df.columns:
-            input_df['Food_Subcat'] = input_df['Product_Id'].astype(str).str[:2]
-            
-        # Make prediction
+        data = request.get_json(force=True)
+        if "Product_Id" in data and "Product_Id_char" not in data:
+            data["Product_Id_char"] = str(data["Product_Id"])[:2]
+        if "Product_Type" in data and "Product_Type_Category" not in data:
+            perishable_types = ["Dairy", "Meat", "Fruits and Vegetables", "Baking Goods", "Bread", "Breakfast", "Frozen Foods", "Seafood", "Starchy Foods"]
+            data["Product_Type_Category"] = "Perishables" if data["Product_Type"] in perishable_types else "Non Perishables"
+
+        missing = [f for f in REQUIRED_FEATURES if f not in data]
+        if missing:
+            return jsonify({"status": "error", "message": f"Missing features: {missing}"}), 400
+
+        input_df = pd.DataFrame([data])[REQUIRED_FEATURES]
         prediction = model.predict(input_df)[0]
-        
-        return jsonify({
-            "status": "success",
-            "predicted_sales": float(prediction)
-        })
+        return jsonify({"status": "success", "predicted_sales": float(prediction)})
     except Exception as e:
-        return jsonify({
-            "status": "error",
-            "message": str(e)
-        }), 400
+        return jsonify({"status": "error", "message": str(e)}), 400
 
-# Define an endpoint for batch predictions
-@superkart_api.post('/v1/batchpredict')
+@superkart_api.post("/v1/batchpredict")
 def predict_batch_sales():
-    """This function handles batch predictions for multiple records."""
     try:
-        json_data = request.get_json()
+        json_data = request.get_json(force=True)
+        if not isinstance(json_data, list):
+            return jsonify({"status": "error", "message": "Batch input must be a list of records."}), 400
         input_df = pd.DataFrame(json_data)
+        if "Product_Id" in input_df.columns and "Product_Id_char" not in input_df.columns:
+            input_df["Product_Id_char"] = input_df["Product_Id"].astype(str).str[:2]
+        if "Product_Type" in input_df.columns and "Product_Type_Category" not in input_df.columns:
+            perishable_types = ["Dairy", "Meat", "Fruits and Vegetables", "Baking Goods", "Bread", "Breakfast", "Frozen Foods", "Seafood", "Starchy Foods"]
+            input_df["Product_Type_Category"] = input_df["Product_Type"].apply(lambda x: "Perishables" if x in perishable_types else "Non Perishables")
 
-        # 1. Map Product_Id_char directly to Food_Subcat if present
-        if 'Product_Id_char' in input_df.columns:
-            input_df['Food_Subcat'] = input_df['Product_Id_char']
-        # 2. Fallback: Derive Food_Subcat from Product_Id if Product_Id_char is missing
-        elif 'Product_Id' in input_df.columns:
-            input_df['Food_Subcat'] = input_df['Product_Id'].astype(str).str[:2]
+        missing = [f for f in REQUIRED_FEATURES if f not in input_df.columns]
+        if missing:
+            return jsonify({"status": "error", "message": f"Missing features: {missing}"}), 400
 
-        # 3. Drop raw identifier columns so the shape matches your trained model
-        columns_to_drop = [col for col in ['Product_Id', 'Product_Id_char'] if col in input_df.columns]
-        input_df = input_df.drop(columns=columns_to_drop)
-
+        input_df = input_df[REQUIRED_FEATURES]
         predictions = model.predict(input_df)
-
-        return jsonify({
-            "status": "success",
-            "predictions": predictions.tolist()
-        })
-
+        return jsonify({"status": "success", "predictions": predictions.tolist()})
     except Exception as e:
-        return jsonify({
-            "status": "error",
-            "message": str(e)
-        }), 400
-
-if __name__ == '__main__':
-    superkart_api.run(host='0.0.0.0', port=5000, debug=False)
+        return jsonify({"status": "error", "message": str(e)}), 400
