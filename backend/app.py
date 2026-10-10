@@ -1,10 +1,12 @@
 import numpy as np
 import joblib
 import pandas as pd
+from pathlib import Path
 from flask import Flask, request, jsonify
 
 superkart_api = Flask("SuperKart Sales Predictor")
-model = joblib.load("backend/superkart_xgb_model.joblib")
+app = superkart_api
+model = joblib.load(Path(__file__).with_name("superkart_xgb_model.joblib"))
 
 REQUIRED_FEATURES = [
     'Product_Weight', 'Product_Sugar_Content', 'Product_Allocated_Area',
