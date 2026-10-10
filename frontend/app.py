@@ -3,8 +3,8 @@ import streamlit as st
 import pandas as pd
 import requests
 
-FLASK_API_URL = "http://backend:7860/v1/predict"
-FLASK_BATCH_API_URL = "http://backend:7860/v1/batchpredict"
+FLASK_API_URL = "http://host.docker.internal:7860/v1/predict"
+FLASK_BATCH_API_URL = "http://host.docker.internal:7860/v1/batchpredict"
 
 st.title("SuperKart Sales Predictor")
 st.write("Enter product and store details to predict sales.")
@@ -17,6 +17,7 @@ product_mrp = st.number_input("Product MRP", min_value=10.0, max_value=300.0, va
 store_size = st.selectbox("Store Size", ["Small", "Medium", "High"])
 store_location_city_type = st.selectbox("Store Location City Type", ["Tier 1", "Tier 2", "Tier 3"])
 store_type = st.selectbox("Store Type", ["Supermarket Type1", "Supermarket Type2", "Departmental Store", "Food Mart"])
+store_id = st.selectbox("Store ID", ["OUT002", "OUT003", "OUT004"])
 product_id_char = st.selectbox("Product ID Char (e.g., FD for Food)", ["FD", "NC", "DR"])
 store_age_years = st.number_input("Store Age (Years)", min_value=1.0, max_value=50.0, value=14.0)
 product_type_category = st.selectbox("Product Type Category", ["Dairy", "Frozen Foods", "Snack Foods", "Canned", "Baking Goods", "Health and Hygiene", "Household", "Meat", "Hard Drinks", "Soft Drinks", "Breads", "Breakfast", "Fruits and Vegetables", "Seafood", "Starchy Foods", "Others"])
@@ -30,13 +31,14 @@ if st.button("Predict Sales (Online)"):
         "Store_Size": store_size,
         "Store_Location_City_Type": store_location_city_type,
         "Store_Type": store_type,
+        "Store_Id": store_id,
         "Product_Id_char": product_id_char,
         "Store_Age_Years": store_age_years,
         "Product_Type_Category": product_type_category
     }
 
     try:
-        response = requests.post(FLASK_API_URL, json=payload)
+        response = requests.post(FLASK_API_URL, json=payload, timeout=30)
         if response.status_code == 200:
             result = response.json()
             prediction = result.get('predicted_sales')
@@ -56,7 +58,7 @@ if uploaded_file is not None:
         try:
             batch_df = pd.read_csv(uploaded_file)
             json_payload = batch_df.to_dict(orient="records")
-            response = requests.post(FLASK_BATCH_API_URL, json=json_payload)
+            response = requests.post(FLASK_BATCH_API_URL, json=json_payload, timeout=30)
             
             if response.status_code == 200:
                 result = response.json()
